@@ -1,0 +1,7 @@
+{
+  "name": "k-stock",
+  "private": true,
+  "description": "K STOCK 臺股研究與追蹤網站",
+  "scripts": { "start": "node server.js", "test": "node --test" },
+  "engines": { "node": ">=20" }
+}
