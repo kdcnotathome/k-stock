@@ -44,6 +44,17 @@
 
       <div class="announcement" id="announcement"><span class="announcement-icon">i</span><span id="announcementText">官方行情以最近交易日公開資料為準，不是盤中即時價格。</span><button id="closeAnnouncement" aria-label="關閉提醒">×</button></div>
 
+      <section class="update-toolbar" aria-label="官方行情更新狀態">
+        <div class="update-info">
+          <div class="update-status-line"><span class="update-indicator" aria-hidden="true"></span><strong id="updateStatus">每 5 分鐘自動檢查一次</strong></div>
+          <small id="lastChecked" role="status" aria-live="polite">等待首次檢查 · 官方最近交易日收盤資料</small>
+        </div>
+        <div class="update-actions">
+          <a class="official-quote-link" href="https://mis.twse.com.tw/" target="_blank" rel="noopener noreferrer">官方即時行情 ↗</a>
+          <button class="refresh-button" type="button" id="refreshNow"><span class="refresh-glyph" aria-hidden="true">↻</span> 立即檢查</button>
+        </div>
+      </section>
+
       <section class="stat-strip" aria-label="資料來源資訊"><div class="stat-item"><span class="stat-label">上市股票與 ETF</span><strong id="twseCount">—</strong><small id="twseDate">等待官方資料</small></div><div class="stat-item"><span class="stat-label">上櫃股票與 ETF</span><strong id="tpexCount">—</strong><small id="tpexDate">等待官方資料</small></div><div class="stat-item"><span class="stat-label">最新行情基準日</span><strong class="date-value" id="marketDate">—</strong><small>官方收盤快照，非即時報價</small></div></section>
 
       <div id="dashboardPage" class="page-view">

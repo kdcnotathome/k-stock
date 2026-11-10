@@ -4,6 +4,7 @@ const $$ = sel => [...document.querySelectorAll(sel)];
 const fmt = (v, decimals = 2) => v == null || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString('zh-TW',{maximumFractionDigits:decimals,minimumFractionDigits:decimals});
 const fmtInt = v => v == null || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString('zh-TW',{maximumFractionDigits:0});
 const safe = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const AUTO_REFRESH_MS = 5 * 60 * 1000; // 檢查官方最新交易日資料，非即時股價更新
 const LOCAL_W = 'k-stock-watchlist';
 const LOCAL_N = 'k-stock-records';
 const samples = [
@@ -15,7 +16,7 @@ const samples = [
   {code:'6488',name:'環球晶',market:'上櫃',close:332,change:8,changePct:2.47,open:326,high:337,low:321,volume:2220000,amount:730000000,date:null}
 ];
 const state = {demo: Boolean(window.FORCE_DEMO) || location.protocol === 'file:' || new URLSearchParams(location.search).has('demo'),
-  selected:null, tab:'overview', page:'dashboard', watch:readLocal(LOCAL_W,[]), records:readLocal(LOCAL_N,{}), searchResults:[], request:0, history:[], historyMsg:'', valuation:null, toastTimer:null};
+  selected:null, tab:'overview', page:'dashboard', watch:readLocal(LOCAL_W,[]), records:readLocal(LOCAL_N,{}), searchResults:[], request:0, history:[], historyMsg:'', valuation:null, toastTimer:null, refreshing:false, lastCheck:0};
 function readLocal(key, fallback) {try {let v=JSON.parse(localStorage.getItem(key)||'null');return v && typeof v==='object'?v:fallback;}catch{return fallback;}}
 function saveLocal(){try{localStorage.setItem(LOCAL_W,JSON.stringify(state.watch));localStorage.setItem(LOCAL_N,JSON.stringify(state.records));}catch {toast('本機儲存空間不足，請先匯出資料備份。')}}
 function recordKey(s){return `${s.market}:${s.code}`}
@@ -26,10 +27,67 @@ function changeString(s){return s.change==null?'漲跌待公布':`${s.change>0?'
 function setConnection(label,ok){const el=$('#connection');el.className='connection'+(ok===true?' online':ok===false?' offline':'');el.innerHTML=`<i></i> ${safe(label)}`}
 function toast(message){const el=$('#toast');el.textContent=message;el.classList.add('shown');clearTimeout(state.toastTimer);state.toastTimer=setTimeout(()=>el.classList.remove('shown'),3300)}
 async function api(url){const response=await fetch(url,{headers:{Accept:'application/json'}});let json;try{json=await response.json()}catch{throw new Error('伺服器回傳資料無法判讀')}if(!response.ok)throw new Error(json.error || '讀取失敗');return json}
-function enterDemo(){state.demo=true;setConnection('互動示範中',null);$('#announcementText').textContent='目前顯示純示範數據，僅供測試操作，並非實際或即時股價。';$('#demoButtonText').textContent='返回官方行情';$('#twseCount').textContent='示範';$('#tpexCount').textContent='示範';$('#marketDate').textContent='示範情境';$('#twseDate').textContent='非真實市場資料';$('#tpexDate').textContent='非真實市場資料';selectStock(samples[0]);toast('已進入互動示範，所有示意價格都不代表真實市場行情。')}
-async function exitDemo(){state.demo=false;$('#demoButtonText').textContent='試用互動示範';state.selected=null;state.history=[];state.valuation=null;$('#stockMain').innerHTML=emptyDetail();$('#researchPreview').innerHTML=emptyResearch();$('#announcementText').textContent='官方行情以最近交易日公開資料為準，不是盤中即時價格。';await refreshMarket();await searchAndSelect('2330')}
-async function refreshMarket(){if(state.demo)return;setConnection('讀取官方資料…',null);try{const d=await api('/api/market');for(const [idx,prefix] of ['twse','tpex'].entries()){const s=d.sources[idx];$(`#${prefix}Count`).textContent=s.available?fmtInt(s.count):'暫無';$(`#${prefix}Date`).textContent=s.available?`${s.date||'日期未提供'}${s.stale?' · 快取資料':''}`:(s.message||'暫時無法取得');}const dates=d.sources.filter(x=>x.available&&x.date).map(x=>x.date).sort();$('#marketDate').textContent=dates.at(-1) || '—';const some=d.sources.some(x=>x.available);setConnection(d.sources.every(x=>x.available)?'官方資料已連線':some?'部分資料可用':'連線異常',some);if(d.sources.some(x=>x.stale))$('#announcementText').textContent='部分來源目前顯示快取資料；請核對標示的交易日期。';}
-  catch(e){setConnection('官方來源暫無回應',false);$('#twseDate').textContent='連線失敗';$('#tpexDate').textContent='連線失敗';$('#announcementText').textContent=`${e.message}。可按「試用互動示範」查看操作，但示範數字並非真實行情。`}}
+function enterDemo(){state.demo=true;$('#updateStatus').textContent='互動示範不會自動更新';$('#lastChecked').textContent='本頁使用示範數值，非實際股價';$('#refreshNow').disabled=true;setConnection('互動示範中',null);$('#announcementText').textContent='目前顯示純示範數據，僅供測試操作，並非實際或即時股價。';$('#demoButtonText').textContent='返回官方行情';$('#twseCount').textContent='示範';$('#tpexCount').textContent='示範';$('#marketDate').textContent='示範情境';$('#twseDate').textContent='非真實市場資料';$('#tpexDate').textContent='非真實市場資料';selectStock(samples[0]);toast('已進入互動示範，所有示意價格都不代表真實市場行情。')}
+async function exitDemo(){state.demo=false;$('#refreshNow').disabled=false;$('#demoButtonText').textContent='試用互動示範';state.selected=null;state.history=[];state.valuation=null;$('#stockMain').innerHTML=emptyDetail();$('#researchPreview').innerHTML=emptyResearch();$('#announcementText').textContent='官方行情以最近交易日公開資料為準，不是盤中即時價格。';await refreshAll(false);await searchAndSelect('2330')}
+async function refreshMarket(){if(state.demo)return;setConnection('讀取官方資料…',null);try{const d=await api('/api/market');for(const [idx,prefix] of ['twse','tpex'].entries()){const s=d.sources[idx];$(`#${prefix}Count`).textContent=s.available?fmtInt(s.count):'暫無';$(`#${prefix}Date`).textContent=s.available?`${s.date||'日期未提供'}${s.stale?' · 快取資料':''}`:(s.message||'暫時無法取得');}const dates=d.sources.filter(x=>x.available&&x.date).map(x=>x.date).sort();$('#marketDate').textContent=dates.at(-1) || '—';const some=d.sources.some(x=>x.available);setConnection(d.sources.every(x=>x.available)?'官方資料已連線':some?'部分資料可用':'連線異常',some);if(d.sources.some(x=>x.stale))$('#announcementText').textContent='部分來源目前顯示快取資料；請核對標示的交易日期。';return some;}
+  catch(e){setConnection('官方來源暫無回應',false);$('#twseDate').textContent='連線失敗';$('#tpexDate').textContent='連線失敗';$('#announcementText').textContent=`${e.message}。可按「試用互動示範」查看操作，但示範數字並非真實行情。`;return false;}}
+
+// 更新已選股票的價格卡片；避免重建整張卡片，保護未儲存的筆記輸入。
+async function refreshActiveQuote(){
+  if(!state.selected || state.demo)return;
+  const current=state.selected;
+  const key=recordKey(current);
+  const response=await api(`/api/stock/${encodeURIComponent(current.code)}?market=${encodeURIComponent(current.market)}`);
+  const latest=response.stock;
+  if(!latest || recordKey(state.selected||{})!==key)return;
+  const dateChanged=latest.date!==current.date;
+  const changed=['close','change','changePct','open','high','low','volume','amount','trades','date'].some(field=>latest[field]!==current[field]);
+  if(!changed)return;
+  state.selected={...latest};
+  const quote=$('#stockMain .stock-quote');
+  if(quote)quote.innerHTML=`<div class="stock-price">${fmt(latest.close)} <small>TWD</small></div><span class="quote-change ${positiveClass(latest.change)}">${safe(changeString(latest))}</span>`;
+  const date=$('#stockMain .stock-date');
+  if(date)date.innerHTML=`<i class="date-dot"></i>官方每日收盤快照 · 交易日 ${safe(latest.date||'未提供')}`;
+  const metrics=$('#stockMain .metrics-grid');
+  if(metrics)metrics.innerHTML=quoteMetrics(latest);
+  if(state.tab==='overview')renderTab();
+  renderInsight();
+  if(dateChanged){void fetchHistory(latest);void fetchValuation(latest);}
+}
+
+// 後端有五分鐘快取；「檢查時間」是此網站讀取的時間，不是成交時間或交易所發布時間。
+async function refreshAll(manual=false){
+  if(state.demo){if(manual)toast('目前是互動示範，請先返回官方行情。');return;}
+  if(state.refreshing){if(manual)toast('正在檢查官方資料，請稍候。');return;}
+  if(!manual && document.hidden)return;
+  state.refreshing=true;
+  const button=$('#refreshNow');
+  button.disabled=true;
+  button.classList.add('loading');
+  $('#updateStatus').textContent='正在檢查官方公開資料…';
+  let marketOk=false, stockOk=true;
+  try{
+    marketOk=await refreshMarket();
+    if(marketOk && state.selected){
+      try{await refreshActiveQuote();}catch(e){stockOk=false;console.warn('個股行情更新失敗：',e.message);}
+    }
+    const stamp=new Intl.DateTimeFormat('zh-TW',{timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date());
+    state.lastCheck=Date.now();
+    $('#lastChecked').textContent=`${marketOk?'最後檢查':'檢查失敗'}：${stamp}（臺灣時間） · 請以各市場交易日為準`;
+    $('#updateStatus').textContent=marketOk ? (stockOk?'每 5 分鐘自動檢查一次':'市場資料已檢查，個股暫時無法更新') : '官方資料暫時無法取得，稍後自動重試';
+    if(manual)toast(!marketOk?'官方資料暫不可用，請稍後再試':stockOk?'已重新檢查官方收盤資料':'市場資料已更新，個股查詢暫時失敗');
+  }catch(e){
+    state.lastCheck=Date.now();
+    $('#updateStatus').textContent='檢查失敗，稍後自動重試';
+    $('#lastChecked').textContent=`檢查失敗：${e.message}`;
+    if(manual)toast('更新失敗，請稍後再試');
+  }finally{
+    state.refreshing=false;
+    button.disabled=false;
+    button.classList.remove('loading');
+  }
+}
+
 function emptyDetail(){return '<div class="empty-detail"><div class="empty-icon">⌕</div><h3>你的市場研究，從這裡開始</h3><p>搜尋股票名稱或代號，即可取得最新公開行情與公司估值資料。</p><button class="soft-btn" data-query="2330">查詢台積電 <span>→</span></button></div>'}
 function emptyResearch(){return '<div class="research-illustration">◎</div><strong>建立自己的觀察清單</strong><p>加入自選股、填入持股成本與目標價，留下專屬的研究筆記。</p>'}
 function updateCount(){$('#watchCount').textContent=String(state.watch.length)}
@@ -49,7 +107,7 @@ function selectStock(stock){state.selected={...stock};state.history=[];state.his
 }
 async function fetchHistory(s){try{const d=await api(`/api/stock/${s.code}/history?market=${encodeURIComponent(s.market)}`);if(recordKey(state.selected||{})!==recordKey(s))return;state.history=d.available?d.points:[];state.historyMsg=d.available?`最近 ${d.points.length} 個交易日${d.stale?' · 快取':''}`:(d.reason||'官方走勢暫無資料');}catch(e){if(recordKey(state.selected||{})!==recordKey(s))return;state.history=[];state.historyMsg='官方近期走勢暫時無法取得';}renderChart()}
 async function fetchValuation(s){try{const d=await api(`/api/stock/${s.code}/valuation?market=${encodeURIComponent(s.market)}`);if(recordKey(state.selected||{})!==recordKey(s))return;state.valuation=d;}catch(e){if(recordKey(state.selected||{})!==recordKey(s))return;state.valuation={available:false,reason:'估值資料暫時無法取得'}}if(state.tab==='valuation')renderTab()}
-function quoteMetrics(s){const metric=(name,v,unit='')=>`<div class="metric-box"><span>${name}</span><strong>${v===null||v===undefined?'—':fmt(v,name==='成交量（張）'?0:2)}${unit}</strong></div>`;return metric('開盤價',s.open)+metric('最高價',s.high)+metric('最低價',s.low)+metric('成交量（張）',s.volume==null?null:s.volume/1000)+metric('成交金額（億元）',s.amount==null?null:s.amount/1e8)+metric('成交筆數',s.trades)}
+function quoteMetrics(s){const metric=(name,v,unit='')=>`<div class="metric-box"><span>${name}</span><strong>${v===null||v===undefined?'—':fmt(v,(name==='成交量（張）'||name==='成交筆數')?0:2)}${unit}</strong></div>`;return metric('開盤價',s.open)+metric('最高價',s.high)+metric('最低價',s.low)+metric('成交量（張）',s.volume==null?null:s.volume/1000)+metric('成交金額（億元）',s.amount==null?null:s.amount/1e8)+metric('成交筆數',s.trades)}
 function renderSelected(){const s=state.selected;if(!s)return;const html=`<div class="stock-header"><div class="stock-id"><div class="ticker-badge">${safe(s.code)}</div><div class="stock-name"><h3>${safe(s.name)} ${state.demo?'<span class="demo-label">示範數據</span>':''}</h3><p>${safe(s.market)} · 臺灣市場 · 新臺幣（元）</p></div></div><button id="favoriteButton" class="star-btn ${isSaved(s)?'saved':''}" aria-label="${isSaved(s)?'移出':'加入'}自選股" title="加入或移出自選股">${isSaved(s)?'★':'☆'}</button></div>
   <div class="stock-quote"><div class="stock-price">${fmt(s.close)} <small>TWD</small></div><span class="quote-change ${positiveClass(s.change)}">${safe(changeString(s))}</span></div>
   <div class="stock-date"><i class="date-dot"></i>${state.demo?'互動示範數據，不代表實際行情':`官方每日收盤快照 · 交易日 ${safe(s.date||'未提供')}`}</div>
@@ -97,6 +155,7 @@ function bindEvents(){document.addEventListener('click',e=>{const q=e.target.clo
   $('#searchButton').onclick=()=>searchNow($('#searchInput').value,true);
   $('#searchInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();searchNow(e.target.value,true)}if(e.key==='Escape')$('#searchResults').hidden=true});
   $('#searchInput').addEventListener('input',e=>{clearTimeout(debounce);if(!e.target.value.trim()){$('#searchResults').hidden=true;return}debounce=setTimeout(()=>searchNow(e.target.value),280)});
+  $('#refreshNow').onclick=()=>void refreshAll(true);
   $('#demoButton').onclick=()=>window.FORCE_DEMO?toast('互動預覽僅提供示範數據；下載完整網站並部署後即可連接官方行情。'):state.demo?exitDemo():enterDemo();
   $('#exportNotes').onclick=exportData;$('#exportWatch').onclick=exportData;
   $('#importButton').onclick=()=>$('#importFile').click();$('#importFile').onchange=e=>{importData(e.target.files?.[0]);e.target.value=''};
@@ -105,6 +164,9 @@ function bindEvents(){document.addEventListener('click',e=>{const q=e.target.clo
 }
 async function init(){bindEvents();updateCount();$('#todayLabel').textContent=new Intl.DateTimeFormat('zh-TW',{timeZone:'Asia/Taipei',year:'numeric',month:'long',day:'numeric'}).format(new Date());
   if(state.demo){enterDemo();return}
-  await refreshMarket();const query=new URLSearchParams(location.search);const code=query.get('stock');const market=query.get('market');if(code&&/^[A-Za-z0-9]{4,7}$/.test(code)){await openStock(code,market||'')}else{await searchAndSelect('2330')}
+  await refreshAll(false);const query=new URLSearchParams(location.search);const code=query.get('stock');const market=query.get('market');if(code&&/^[A-Za-z0-9]{4,7}$/.test(code)){await openStock(code,market||'')}else{await searchAndSelect('2330')}
+  window.setInterval(()=>{if(!state.demo && !document.hidden && navigator.onLine)void refreshAll(false)},AUTO_REFRESH_MS);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden && !state.demo && Date.now()-state.lastCheck>=AUTO_REFRESH_MS)void refreshAll(false)});
+  window.addEventListener('online',()=>{if(!state.demo)void refreshAll(false)});
 }
 init();
