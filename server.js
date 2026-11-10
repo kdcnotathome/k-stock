@@ -3,13 +3,15 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const { URL } = require('node:url');
+const analytics = require('./analytics');
 
 const PORT = Number(process.env.PORT || 3000);
 const ROOT = path.resolve(__dirname, 'public');
 const OFFICIAL = {
   twse: 'https://openapi.twse.com.tw/v1',
   tpex: 'https://www.tpex.org.tw/openapi/v1',
-  twseHistory: 'https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY'
+  twseHistory: 'https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY',
+  tpexHistory: 'https://www.tpex.org.tw/www/zh-tw/afterTrading/tradingStock'
 };
 const cache = new Map();
 const CACHE_MS = 5 * 60_000;
@@ -140,33 +142,57 @@ async function getValuation(market, code) {
     yield:num(pick(row,'DividendYield','Yield','殖利率','殖利率(%)'))
   };
 }
+async function getMargin(market,code){
+  const uri=market==='上市'?`${OFFICIAL.twse}/exchangeReport/MI_MARGN`:`${OFFICIAL.tpex}/tpex_mainboard_margin_balance`;
+  const {data,stale}=await fetchJson(uri,EXTRA_MS);
+  if(!Array.isArray(data))throw Error('融資融券官方資料格式暫時無法判讀');
+  const row=data.find(r=>analytics.recordCode(r)===code);
+  if(!row)return {available:false,reason:'此股票目前沒有官方融資融券明細，可能不符合信用交易資格。',sourceUrl:market==='上市'?'https://www.twse.com.tw/zh/trading/exchange/mi-margn.html':'https://www.tpex.org.tw/zh-tw/mainboard/trading/margin-trading/transactions.html'};
+  const result=analytics.normalizeMargin(row,market);
+  return result?{...result,stale}:{available:false,reason:'官方欄位未提供可辨識的融資或融券餘額。'};
+}
+async function getInstitutional(market,code){
+  if(market==='上市')return {
+    available:false, reason:'上市逐檔法人日報屬證交所交易報表；目前尚未確認可供第三方公開網站再展示的授權範圍，因此先提供官方查詢入口，不擷取轉播。',
+    source:'臺灣證券交易所',sourceUrl:'https://www.twse.com.tw/zh/trading/foreign/t86.html',licensePending:true
+  };
+  const {data,stale}=await fetchJson(`${OFFICIAL.tpex}/tpex_3insti_daily_trading`,EXTRA_MS);
+  if(!Array.isArray(data))throw Error('法人買賣超官方資料格式暫時無法判讀');
+  const row=data.find(r=>analytics.recordCode(r)===code);
+  if(!row)return {available:false,reason:'此股票目前沒有可用的法人買賣超資料。',sourceUrl:'https://www.tpex.org.tw/zh-tw/mainboard/trading/major-institutional/detail/day.html'};
+  const result=analytics.normalizeInstitutional(row);
+  return result?{...result,stale}:{available:false,reason:'官方欄位格式異動，暫時無法解讀法人數據。',sourceUrl:'https://www.tpex.org.tw/openapi/'};
+}
 async function getHistory(market, code) {
-  if (market !== '上市') return { available:false, reason:'上櫃個股的官方歷史走勢尚未接入，其他行情功能仍可使用。' };
-  const now = new Date();
-  // TWSE takes Gregorian month as YYYYMM01. Use current UTC month; 3 months provide fallback for holidays.
-  const months = [0,1,2].map(back => {
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth()-back, 1));
-    return `${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,'0')}01`;
-  });
-  const datasets = await Promise.allSettled(months.map(async month => {
-    const url = `${OFFICIAL.twseHistory}?response=json&date=${month}&stockNo=${encodeURIComponent(code)}`;
-    return await fetchJson(url, EXTRA_MS);
+  // 查詢近 6 個月份，以計算 60 日均線；資料均為歷史收盤，非盤中 K 線。
+  const now=new Date();
+  const months=Array.from({length:6},(_,back)=>new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-back,1)));
+  const datasets=await Promise.allSettled(months.map(async d=>{
+    const yyyy=d.getUTCFullYear();const mm=String(d.getUTCMonth()+1).padStart(2,'0');
+    const url=market==='上市'
+      ?`${OFFICIAL.twseHistory}?response=json&date=${yyyy}${mm}01&stockNo=${encodeURIComponent(code)}`
+      :`${OFFICIAL.tpexHistory}?code=${encodeURIComponent(code)}&date=${encodeURIComponent(`${yyyy}/${mm}/01`)}&response=json`;
+    return await fetchJson(url,EXTRA_MS);
   }));
-  const data = [];
-  let stale = false;
-  for (const r of datasets) {
-    if (r.status !== 'fulfilled') continue;
+  const entries=[];let stale=false;
+  for(const r of datasets){
+    if(r.status!=='fulfilled')continue;
     stale ||= r.value.stale;
-    const rows = r.value.data?.data;
-    if (!Array.isArray(rows)) continue;
-    for (const row of rows) {
-      if (!Array.isArray(row) || row.length < 7) continue;
-      const date = isoDate(row[0]); const close = num(row[6]);
-      if (date && close !== null) data.push({date,close});
-    }
+    const body=r.value.data;
+    const rows=market==='上市'?body?.data:body?.tables?.[0]?.data;
+    if(!Array.isArray(rows))continue;
+    for(const row of rows){const entry=analytics.normalizeHistoryEntry(row,market);if(entry)entries.push(entry);}
   }
-  const unique = [...new Map(data.map(r=>[r.date,r])).values()].sort((a,b)=>a.date.localeCompare(b.date)).slice(-45);
-  return unique.length ? {available:true, points:unique, stale} : {available:false, reason:'官方近期歷史行情暫時無法取得。'};
+  const unique=[...new Map(entries.map(r=>[r.date,r])).values()].sort((a,b)=>a.date.localeCompare(b.date)).slice(-120);
+  return unique.length?{available:true,points:unique,stale,source:market==='上市'?'臺灣證券交易所歷史月報':'證券櫃檯買賣中心歷史月報'}
+    :{available:false,reason:'官方近期歷史行情暫時無法取得，可能是網路限制或當月沒有有效成交。'};
+}
+async function getTechnical(market,code){
+  const h=await getHistory(market,code);
+  if(!h.available)return h;
+  const calculated=analytics.indicators(h.points);
+  return {...calculated,stale:h.stale,source:h.source,pointsCount:h.points.length,
+    note:'本網站依官方日收盤價自行計算未還原均線（未調整除權息），僅供研究參考。'};
 }
 function rateLimit(req,res) {
   const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown').split(',')[0].slice(0,100);
@@ -202,6 +228,14 @@ const handler = async (req,res) => {
           return score(a)-score(b)||a.code.localeCompare(b.code);
         });
       return sendJson(res,200,{stocks:found.slice(0,40),count:found.length,sources});
+    }
+    const analyticsRoute=url.pathname.match(/^\/api\/stock\/([a-zA-Z0-9]{4,7})\/(institutional|margin|technical)$/);
+    if(analyticsRoute){
+      const [,code,kind]=analyticsRoute;
+      const market=url.searchParams.get('market')||'上市';
+      if(!['上市','上櫃'].includes(market))return sendJson(res,400,{error:'市場別不正確'});
+      const result=kind==='margin'?await getMargin(market,code):kind==='institutional'?await getInstitutional(market,code):await getTechnical(market,code);
+      return sendJson(res,200,result);
     }
     const extra = url.pathname.match(/^\/api\/stock\/([a-zA-Z0-9]{4,7})\/(valuation|history)$/);
     if (extra) {
