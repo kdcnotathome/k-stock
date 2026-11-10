@@ -16,7 +16,7 @@ const samples = [
   {code:'6488',name:'環球晶',market:'上櫃',close:332,change:8,changePct:2.47,open:326,high:337,low:321,volume:2220000,amount:730000000,date:null}
 ];
 const state = {demo: Boolean(window.FORCE_DEMO) || location.protocol === 'file:' || new URLSearchParams(location.search).has('demo'),
-  selected:null, tab:'overview', page:'dashboard', watch:readLocal(LOCAL_W,[]), records:readLocal(LOCAL_N,{}), searchResults:[], request:0, history:[], historyMsg:'', valuation:null, toastTimer:null, refreshing:false, lastCheck:0};
+  selected:null, tab:'overview', page:'dashboard', watch:readLocal(LOCAL_W,[]), records:readLocal(LOCAL_N,{}), searchResults:[], request:0, history:[], historyMsg:'', valuation:null, analysis:{institutional:null,margin:null,technical:null}, toastTimer:null, refreshing:false, lastCheck:0};
 function readLocal(key, fallback) {try {let v=JSON.parse(localStorage.getItem(key)||'null');return v && typeof v==='object'?v:fallback;}catch{return fallback;}}
 function saveLocal(){try{localStorage.setItem(LOCAL_W,JSON.stringify(state.watch));localStorage.setItem(LOCAL_N,JSON.stringify(state.records));}catch {toast('本機儲存空間不足，請先匯出資料備份。')}}
 function recordKey(s){return `${s.market}:${s.code}`}
@@ -52,7 +52,7 @@ async function refreshActiveQuote(){
   if(metrics)metrics.innerHTML=quoteMetrics(latest);
   if(state.tab==='overview')renderTab();
   renderInsight();
-  if(dateChanged){void fetchHistory(latest);void fetchValuation(latest);}
+  if(dateChanged){state.analysis={institutional:null,margin:null,technical:null};void fetchHistory(latest);void fetchValuation(latest);if(['institutional','margin','technical'].includes(state.tab))void loadAnalysis(latest,state.tab);}
 }
 
 // 後端有五分鐘快取；「檢查時間」是此網站讀取的時間，不是成交時間或交易所發布時間。
@@ -101,20 +101,34 @@ async function searchNow(q,selectFirst=false){q=String(q||'').trim();if(!q){$('#
 function searchAndSelect(q){navigate('dashboard');return searchNow(q,true)}
 async function openStock(code,market){navigate('dashboard');if(state.demo){const found=samples.find(s=>s.code===code&&(!market||market===s.market));if(found)selectStock(found);else toast('示範資料沒有此股票，請切換回官方行情。');return}
   try{const d=await api(`/api/stock/${encodeURIComponent(code)}?market=${encodeURIComponent(market||'')}`);selectStock(d.stock)}catch(e){toast(e.message)}}
-function selectStock(stock){state.selected={...stock};state.history=[];state.historyMsg='正在讀取近期走勢…';state.valuation=null;state.tab='overview';$('#searchResults').hidden=true;$('#detailHeadingSuffix').textContent=`/ ${stock.name} ${stock.code}`;if(state.demo){state.history=Array.from({length:30},(_,i)=>({date:`示範 ${i+1}`,close:stock.close*(0.91 + i/300 + Math.sin(i*.61)*.024)}));state.historyMsg='示範走勢，非實際歷史價格';state.valuation={available:true,pe:23.6,pb:4.45,yield:1.67,date:null};}
+function selectStock(stock){state.selected={...stock};state.history=[];state.historyMsg='正在讀取近期走勢…';state.valuation=null;state.analysis={institutional:null,margin:null,technical:null};state.tab='overview';$('#searchResults').hidden=true;$('#detailHeadingSuffix').textContent=`/ ${stock.name} ${stock.code}`;if(state.demo){state.history=Array.from({length:30},(_,i)=>({date:`示範 ${i+1}`,close:stock.close*(0.91 + i/300 + Math.sin(i*.61)*.024)}));state.historyMsg='示範走勢，非實際歷史價格';state.valuation={available:true,pe:23.6,pb:4.45,yield:1.67,date:null};}
   renderSelected();renderInsight();if(!state.demo){void fetchHistory(stock);void fetchValuation(stock)}
   try{const u=new URL(location.href);u.searchParams.delete('demo');u.searchParams.set('stock',stock.code);u.searchParams.set('market',stock.market);history.replaceState(null,'',u.pathname+u.search)}catch{}
 }
 async function fetchHistory(s){try{const d=await api(`/api/stock/${s.code}/history?market=${encodeURIComponent(s.market)}`);if(recordKey(state.selected||{})!==recordKey(s))return;state.history=d.available?d.points:[];state.historyMsg=d.available?`最近 ${d.points.length} 個交易日${d.stale?' · 快取':''}`:(d.reason||'官方走勢暫無資料');}catch(e){if(recordKey(state.selected||{})!==recordKey(s))return;state.history=[];state.historyMsg='官方近期走勢暫時無法取得';}renderChart()}
 async function fetchValuation(s){try{const d=await api(`/api/stock/${s.code}/valuation?market=${encodeURIComponent(s.market)}`);if(recordKey(state.selected||{})!==recordKey(s))return;state.valuation=d;}catch(e){if(recordKey(state.selected||{})!==recordKey(s))return;state.valuation={available:false,reason:'估值資料暫時無法取得'}}if(state.tab==='valuation')renderTab()}
+async function loadAnalysis(stock,kind){
+  if(state.demo||!['institutional','margin','technical'].includes(kind))return;
+  if(state.analysis[kind])return;
+  state.analysis[kind]={loading:true};if(state.tab===kind)renderTab();
+  try{
+    const result=await api(`/api/stock/${encodeURIComponent(stock.code)}/${kind}?market=${encodeURIComponent(stock.market)}`);
+    if(recordKey(state.selected||{})!==recordKey(stock))return;
+    state.analysis[kind]=result;
+  }catch(e){
+    if(recordKey(state.selected||{})!==recordKey(stock))return;
+    state.analysis[kind]={available:false,reason:e.message||'官方來源暫時無法取得。'};
+  }
+  if(state.tab===kind)renderTab();
+}
 function quoteMetrics(s){const metric=(name,v,unit='')=>`<div class="metric-box"><span>${name}</span><strong>${v===null||v===undefined?'—':fmt(v,(name==='成交量（張）'||name==='成交筆數')?0:2)}${unit}</strong></div>`;return metric('開盤價',s.open)+metric('最高價',s.high)+metric('最低價',s.low)+metric('成交量（張）',s.volume==null?null:s.volume/1000)+metric('成交金額（億元）',s.amount==null?null:s.amount/1e8)+metric('成交筆數',s.trades)}
 function renderSelected(){const s=state.selected;if(!s)return;const html=`<div class="stock-header"><div class="stock-id"><div class="ticker-badge">${safe(s.code)}</div><div class="stock-name"><h3>${safe(s.name)} ${state.demo?'<span class="demo-label">示範數據</span>':''}</h3><p>${safe(s.market)} · 臺灣市場 · 新臺幣（元）</p></div></div><button id="favoriteButton" class="star-btn ${isSaved(s)?'saved':''}" aria-label="${isSaved(s)?'移出':'加入'}自選股" title="加入或移出自選股">${isSaved(s)?'★':'☆'}</button></div>
   <div class="stock-quote"><div class="stock-price">${fmt(s.close)} <small>TWD</small></div><span class="quote-change ${positiveClass(s.change)}">${safe(changeString(s))}</span></div>
   <div class="stock-date"><i class="date-dot"></i>${state.demo?'互動示範數據，不代表實際行情':`官方每日收盤快照 · 交易日 ${safe(s.date||'未提供')}`}</div>
   <hr class="grid-divider"><div class="metrics-grid">${quoteMetrics(s)}</div>
   <div class="chart-head"><strong>近期價格走勢</strong><small id="chartInfo">${safe(state.historyMsg)}</small></div><div class="price-chart" id="priceChart"></div>
-  <div class="detail-tabs"><button data-tab="overview" class="detail-tab ${state.tab==='overview'?'active':''}">行情明細</button><button data-tab="valuation" class="detail-tab ${state.tab==='valuation'?'active':''}">估值指標</button><button data-tab="notes" class="detail-tab ${state.tab==='notes'?'active':''}">我的紀錄</button></div><div class="tab-pane" id="tabPane"></div>`;
-  $('#stockMain').innerHTML=html;$('#favoriteButton').onclick=toggleSaved;$$('.detail-tab').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;$$('.detail-tab').forEach(el=>el.classList.toggle('active',el===b));renderTab()});renderChart();renderTab();}
+  <div class="detail-tabs"><button data-tab="overview" class="detail-tab ${state.tab==='overview'?'active':''}">行情明細</button><button data-tab="valuation" class="detail-tab ${state.tab==='valuation'?'active':''}">估值指標</button><button data-tab="institutional" class="detail-tab ${state.tab==='institutional'?'active':''}">三大法人</button><button data-tab="margin" class="detail-tab ${state.tab==='margin'?'active':''}">融資融券</button><button data-tab="technical" class="detail-tab ${state.tab==='technical'?'active':''}">技術分析</button><button data-tab="notes" class="detail-tab ${state.tab==='notes'?'active':''}">我的紀錄</button></div><div class="tab-pane" id="tabPane"></div>`;
+  $('#stockMain').innerHTML=html;$('#favoriteButton').onclick=toggleSaved;$$('.detail-tab').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;$$('.detail-tab').forEach(el=>el.classList.toggle('active',el===b));renderTab();if(['institutional','margin','technical'].includes(state.tab))void loadAnalysis(s,state.tab)});renderChart();renderTab();}
 function renderChart(){const el=$('#priceChart');if(!el||!state.selected)return;$('#chartInfo').textContent=state.historyMsg;const values=state.history;if(values.length<2){el.innerHTML=`<div class="chart-notice">${safe(state.historyMsg||'官方近期歷史行情暫無資料')}</div>`;return}
   const width=660,height=166,pad=17;const nums=values.map(x=>x.close).filter(Number.isFinite);const lo=Math.min(...nums),hi=Math.max(...nums);const gap=Math.max(hi-lo,hi*.03||1);const min=lo-gap*.16,max=hi+gap*.16;
   const xy=values.map((p,i)=>[pad+(width-2*pad)*i/(values.length-1),pad+(height-2*pad)*(max-p.close)/(max-min)]);
@@ -129,6 +143,8 @@ function renderTab(){const el=$('#tabPane');if(!el||!state.selected)return;const
     const v=state.valuation;if(!v){el.innerHTML='<div class="data-skeleton">正在向官方來源取得估值資料…</div>';return}
     if(!v.available){el.innerHTML=`<div class="chart-notice">${safe(v.reason||'目前沒有可顯示的估值資料')}</div>`;return}
     el.innerHTML=`<div class="valuation-grid"><div class="value-tile"><span>本益比（P/E）</span><b>${fmt(v.pe)}</b><small>倍</small></div><div class="value-tile"><span>股價淨值比（P/B）</span><b>${fmt(v.pb)}</b><small>倍</small></div><div class="value-tile"><span>殖利率</span><b>${fmt(v.yield)}</b><small>%</small></div></div><p class="data-hint">${state.demo?'上述估值為示範數據。':`資料日期 ${safe(v.date||'由官方來源公告為準')} · 估值項目若未公告則顯示「—」。`}</p>`;
+  } else if(['institutional','margin','technical'].includes(state.tab)){
+    el.innerHTML=window.KStockAnalytics.render(state.tab,state.analysis[state.tab],s,state.demo);
   } else if(state.tab==='notes'){
     const r=getRecord(s);el.innerHTML=`<form id="notesForm"><div class="edit-grid"><label class="field"><span>持有股數</span><input id="fieldShares" type="number" min="0" step="1" placeholder="例如 1000" value="${safe(r.shares)}"></label><label class="field"><span>每股持有成本（元）</span><input id="fieldCost" type="number" min="0" step="0.01" placeholder="例如 880" value="${safe(r.cost)}"></label><label class="field"><span>目標價格（元）</span><input id="fieldTarget" type="number" min="0" step="0.01" placeholder="例如 1200" value="${safe(r.target)}"></label><label class="field field-wide"><span>研究筆記與觀察重點</span><textarea id="fieldNote" maxlength="5000" placeholder="記錄買進原因、企業優勢、需觀察的風險或後續計畫">${safe(r.note)}</textarea></label></div><div class="save-row"><span>僅保存在這台裝置的瀏覽器</span><button class="primary-btn" type="submit">儲存紀錄</button></div></form>${r.updated?`<div class="notes-meta">最後儲存：${new Date(r.updated).toLocaleString('zh-TW')}</div>`:''}`;
     $('#notesForm').onsubmit=e=>{e.preventDefault();const rec={shares:$('#fieldShares').value,cost:$('#fieldCost').value,target:$('#fieldTarget').value,note:$('#fieldNote').value};if([rec.shares,rec.cost,rec.target].some(x=>x!==''&&(!Number.isFinite(Number(x))||Number(x)<0))){toast('請輸入正確的非負數值。');return}setRecord(s,rec);toast('研究紀錄已儲存在目前瀏覽器');renderTab();renderInsight()};
