@@ -1,0 +1,37 @@
+/* 僅用於 K STOCK 個股分析分頁；維持現有整體設計 */
+.detail-tabs{flex-wrap:wrap;row-gap:6px}
+.detail-tab{white-space:nowrap}
+.analysis-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:18px}
+.analysis-heading h4{margin:0 0 7px;font-size:15px;color:#e7f7f5}
+.analysis-heading small{color:#819cb1;font-size:11px;line-height:1.55}
+.analysis-flag{white-space:nowrap;color:#85e7d2;background:#163b42;border:1px solid #32696b;border-radius:16px;font-size:10px;padding:5px 10px}
+.analysis-tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.analysis-tile{background:linear-gradient(135deg,#1b2b3f,#192839);border:1px solid #32465a;padding:15px;border-radius:12px;min-width:0}
+.analysis-tile span{display:block;min-height:16px;color:#9cafc3;font-size:11px;line-height:1.6}
+.analysis-tile strong{display:block;font-size:clamp(18px,2.1vw,24px);font-weight:800;margin-top:9px;word-break:break-word;font-variant-numeric:tabular-nums}
+.analysis-tile small{display:block;color:#718da2;font-size:11px;margin-top:5px}
+.analysis-tile strong.rise{color:#ff8495}.analysis-tile strong.fall{color:#71cfad}
+.analysis-bar{height:5px;border-radius:99px;background:#2b3e51;overflow:hidden;margin-top:14px}
+.analysis-bar i{display:block;height:100%;border-radius:99px;background:#7792a6}
+.analysis-bar i.rise{background:#f77483}.analysis-bar i.fall{background:#63c5a4}
+.analytics-footnote{margin:16px 0 2px;color:#7f96ab;font-size:11px;line-height:1.9}
+.analytics-source-link{color:#9aebdb;text-decoration:underline;text-underline-offset:3px;display:inline-block;margin-left:8px}
+.analysis-empty{padding:31px 24px;background:#18283b;border:1px dashed #3a5267;border-radius:13px;text-align:center}
+.analysis-empty-icon{font-size:30px;color:#8ce6d5;margin-bottom:10px}
+.analysis-empty h4{font-size:15px;color:#dcecf7;margin:0 0 10px}
+.analysis-empty p{color:#90a8bb;font-size:12px;line-height:1.9;margin:0 0 13px}
+.analysis-smalltext{font-size:11px;color:#94adc1;margin:16px 0;line-height:1.8}
+.analysis-smalltext b{font-size:13px}
+.analysis-ma-tiles .analysis-tile strong{font-size:20px}
+.candle-wrap{border:1px solid #2d4053;background:#111d2d;border-radius:13px;padding:15px 12px 3px;margin-top:14px;overflow:hidden}
+.candle-wrap svg{display:block;width:100%;max-width:100%;height:auto;min-height:190px}
+.candle-legend{display:flex;flex-wrap:wrap;gap:12px;color:#93a8bd;font-size:10px;padding:0 5px 10px}
+.candle-legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
+.legend-red{background:#f77483}.legend-green{background:#63c5a4}.legend-yellow{background:#f6c979}.legend-aqua{background:#86e8d7}
+.analysis-table-title{color:#d8e8f2;font-size:13px;margin:20px 0 8px}
+.analysis-table-wrap{width:100%;overflow-x:auto}
+.analysis-table{border-collapse:collapse;width:100%;font-size:11px;white-space:nowrap}
+.analysis-table td,.analysis-table th{padding:10px 7px;text-align:right;border-bottom:1px solid #2a3c4c}
+.analysis-table td:first-child,.analysis-table th:first-child{text-align:left;color:#aec1d2}
+.analysis-table th{color:#8fa9bb;font-weight:600;background:#162638}
+@media(max-width:600px){.analysis-heading{align-items:flex-start}.analysis-tiles{gap:8px}.analysis-tile{padding:11px}.analysis-tile strong{font-size:17px}.analysis-ma-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.analysis-ma-tiles .analysis-tile strong{font-size:18px}.candle-wrap{padding:10px 5px 3px}.analysis-flag{font-size:9px}}

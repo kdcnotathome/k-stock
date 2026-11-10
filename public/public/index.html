@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0a101c">
+<meta name="description" content="K STOCK 臺股觀察室：查詢上市、上櫃股票官方每日行情、建立自選清單、記錄持股成本與研究筆記。">
+<title>K STOCK — 臺股觀察室</title>
+<link rel="stylesheet" href="./styles.css">
+<link rel="stylesheet" href="./analytics.css">
+</head>
+<body>
+<div class="glow glow-a"></div><div class="glow glow-b"></div>
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar">
+    <a href="/" class="brand" aria-label="K STOCK 首頁"><span class="brand-mark"><span>K</span><i></i></span><span class="brand-word"><strong>K STOCK</strong><small>TAIWAN MARKET DESK</small></span></a>
+    <div class="side-section-label">工作空間</div>
+    <nav class="side-nav" aria-label="主要功能">
+      <button type="button" class="nav-item selected" data-page="dashboard"><span class="nav-icon">◫</span> 行情總覽 <span class="nav-end">⌘</span></button>
+      <button type="button" class="nav-item" data-page="watchlist"><span class="nav-icon">☆</span> 我的自選股 <span class="side-count" id="watchCount">0</span></button>
+      <button type="button" class="nav-item" data-page="records"><span class="nav-icon">▤</span> 我的研究紀錄</button>
+    </nav>
+    <div class="side-section-label with-gap">快速查詢</div>
+    <div class="quick-links" id="quickLinks">
+      <button data-query="2330"><span class="quick-code">2330</span><span>台積電</span><span class="quick-arrow">↗</span></button>
+      <button data-query="2317"><span class="quick-code">2317</span><span>鴻海</span><span class="quick-arrow">↗</span></button>
+      <button data-query="2454"><span class="quick-code">2454</span><span>聯發科</span><span class="quick-arrow">↗</span></button>
+      <button data-query="0050"><span class="quick-code">0050</span><span>元大台灣50</span><span class="quick-arrow">↗</span></button>
+      <button data-query="6488"><span class="quick-code">6488</span><span>環球晶</span><span class="quick-arrow">↗</span></button>
+    </div>
+    <div class="side-footer"><div class="small-orb"></div><div><strong>專注研究，不追逐雜訊。</strong><span>資料以交易所公告為準</span></div></div>
+  </aside>
+
+  <div class="content-shell">
+    <header class="topbar"><div class="crumb">K STOCK <span>/</span> <b id="breadcrumb">行情總覽</b></div>
+      <div class="top-actions"><span class="today-label" id="todayLabel">臺灣股市</span><span class="divider-vertical"></span><span id="connection" class="connection"><i></i> 等待資料</span><button class="icon-btn hamburger" id="menuButton" aria-label="開啟選單">☰</button></div>
+    </header>
+
+    <div class="main-body">
+      <section class="hero"><div class="hero-copy"><div class="eyebrow"><span class="eyebrow-line"></span> YOUR MARKET. YOUR PERSPECTIVE.</div><h1>看懂市場，<em>掌握自己的節奏。</em></h1><p>從一檔股票開始，把行情、數據與你的投資想法整理在一起。</p></div><div class="hero-orbit" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="orbit orbit-three"></div><div class="orbit-center">K<span>↗</span></div></div></section>
+
+      <section class="search-section" aria-label="股票搜尋"><div class="search-wrap"><span class="search-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 5 5"></path></svg></span><input id="searchInput" autocomplete="off" spellcheck="false" placeholder="輸入股票代號或名稱，例如 2330、台積電、鴻海" aria-label="股票代號或名稱"><kbd>↵</kbd><button id="searchButton" type="button">查詢股票 <span>→</span></button></div>
+        <div id="searchResults" class="search-results" hidden></div>
+        <div class="search-support"><div class="hot-tags"><span>熱門搜尋</span><button data-query="2330"># 台積電</button><button data-query="2317"># 鴻海</button><button data-query="0050"># 元大台灣50</button><button data-query="2603"># 長榮</button></div><span class="search-help">支援上市・上櫃・ETF</span></div></section>
+
+      <div class="announcement" id="announcement"><span class="announcement-icon">i</span><span id="announcementText">官方行情以最近交易日公開資料為準，不是盤中即時價格。</span><button id="closeAnnouncement" aria-label="關閉提醒">×</button></div>
+
+      <section class="update-toolbar" aria-label="官方行情更新狀態">
+        <div class="update-info">
+          <div class="update-status-line"><span class="update-indicator" aria-hidden="true"></span><strong id="updateStatus">每 5 分鐘自動檢查一次</strong></div>
+          <small id="lastChecked" role="status" aria-live="polite">等待首次檢查 · 官方最近交易日收盤資料</small>
+        </div>
+        <div class="update-actions">
+          <a class="official-quote-link" href="https://mis.twse.com.tw/" target="_blank" rel="noopener noreferrer">官方即時行情 ↗</a>
+          <button class="refresh-button" type="button" id="refreshNow"><span class="refresh-glyph" aria-hidden="true">↻</span> 立即檢查</button>
+        </div>
+      </section>
+
+      <section class="stat-strip" aria-label="資料來源資訊"><div class="stat-item"><span class="stat-label">上市股票與 ETF</span><strong id="twseCount">—</strong><small id="twseDate">等待官方資料</small></div><div class="stat-item"><span class="stat-label">上櫃股票與 ETF</span><strong id="tpexCount">—</strong><small id="tpexDate">等待官方資料</small></div><div class="stat-item"><span class="stat-label">最新行情基準日</span><strong class="date-value" id="marketDate">—</strong><small>官方收盤快照，非即時報價</small></div></section>
+
+      <div id="dashboardPage" class="page-view">
+        <div class="section-heading"><div><span class="section-kicker">STOCK EXPLORER</span><h2>個股觀察 <span id="detailHeadingSuffix">/ 輸入代號開始</span></h2></div><button id="demoButton" class="ghost-btn">◈ <span id="demoButtonText">試用互動示範</span></button></div>
+        <div class="dashboard-grid">
+          <section class="stock-main card-panel" id="stockMain"><div class="empty-detail"><div class="empty-icon">⌕</div><h3>你的市場研究，從這裡開始</h3><p>搜尋股票名稱或代號，即可取得最新公開行情與公司估值資料。</p><button class="soft-btn" data-query="2330">查詢台積電 <span>→</span></button></div></section>
+          <aside class="insights-column"><section class="card-panel insight-panel"><div class="panel-title"><h3>研究儀表板</h3><span class="panel-eyebrow">PERSONAL DESK</span></div><div id="researchPreview" class="research-placeholder"><div class="research-illustration">◎</div><strong>建立自己的觀察清單</strong><p>加入自選股、填入持股成本與目標價，留下專屬的研究筆記。</p></div></section><section class="card-panel sources-panel"><h3>資料來源與說明</h3><div class="source-row"><span class="source-dot"></span><div><b>臺灣證券交易所</b><small>上市股票公開行情</small></div><span>TWSE</span></div><div class="source-row"><span class="source-dot purple"></span><div><b>證券櫃檯買賣中心</b><small>上櫃股票公開行情</small></div><span>TPEx</span></div><a href="https://mis.twse.com.tw/" target="_blank" rel="noopener noreferrer" class="source-link">前往證交所官方即時行情 <span>↗</span></a></section></aside>
+        </div>
+      </div>
+
+      <div id="watchlistPage" class="page-view" hidden><div class="section-heading"><div><span class="section-kicker">MY WATCHLIST</span><h2>我的自選股</h2></div><button id="exportWatch" class="ghost-btn">↥ 匯出資料</button></div><section class="card-panel list-page-panel"><div id="watchlistContent"></div></section></div>
+      <div id="recordsPage" class="page-view" hidden><div class="section-heading"><div><span class="section-kicker">RESEARCH JOURNAL</span><h2>我的研究紀錄</h2></div><div class="button-pair"><button id="importButton" class="ghost-btn">↧ 匯入資料</button><button id="exportNotes" class="ghost-btn">↥ 匯出資料</button></div></div><section class="card-panel list-page-panel"><div id="recordsContent"></div></section><input type="file" id="importFile" accept="application/json,.json" hidden></div>
+    </div>
+    <footer class="footer"><div><b>K STOCK</b> · 臺股觀察室</div><p>公開資料僅供個人研究參考，不構成投資建議。最新價格與交易時間請以交易所公告為準。</p></footer>
+  </div>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="./analytics-ui.js" defer></script>
+<script src="./app.js" defer></script>
+</body></html>
